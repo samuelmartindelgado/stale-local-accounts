@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Instalar Pester y PSScriptAnalyzer (PowerShell 7)
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Instalar Pester (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          $results | Format-Table -AutoSize | Out-String -Width 220 | Write-Host
+          $errors = @($results | Where-Object { $_.Severity -eq 'Error' })
+          if ($errors.Count -gt 0) {
+            throw "PSScriptAnalyzer ha encontrado $($errors.Count) errores."
+          }
+
+      - name: Pester en PowerShell 7
+        shell: pwsh
+        run: Invoke-Pester ./tests -CI -Output Detailed
+
+      - name: Pester en Windows PowerShell 5.1
+        shell: powershell
+        run: Invoke-Pester ./tests -CI -Output Detailed
+
+      - name: Ejecución real en PowerShell 7
+        shell: pwsh
+        run: ./Test-LocalAccounts.ps1 -OutputPath ./salida/pwsh7; exit 0
+
+      - name: Ejecución real en Windows PowerShell 5.1
+        shell: powershell
+        run: ./Test-LocalAccounts.ps1 -OutputPath ./salida/windowsps51; exit 0
+
+      - name: Guardar informes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: salida
+          path: salida/
+          if-no-files-found: warn
